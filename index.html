@@ -1,1 +1,705 @@
+```html
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>네온 테트리스 (모바일 최적화)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome 아이콘 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #0b0f19;
+            touch-action: none; /* 모바일 브라우저 기본 스크롤 및 더블탭 줌 차단 */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* 스마트폰 가상 버튼 햅틱 클릭 시 시각 피드백 효과 */
+        .touch-btn:active {
+            transform: scale(0.9);
+            background-color: #1e293b !important;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen text-slate-100 items-center justify-between p-2 overflow-hidden">
+
+    <!-- 상단 점수 및 통계 패널 -->
+    <div class="w-full max-w-md flex justify-between items-center px-4 py-2 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="bg-amber-500 text-slate-950 p-2 rounded-xl flex items-center justify-center shadow-md">
+                <i class="fa-solid fa-gamepad text-lg animate-pulse"></i>
+            </div>
+            <div>
+                <h1 class="font-orbitron font-extrabold text-sm tracking-widest text-amber-400">NEON TETRIS</h1>
+                <p class="text-[10px] text-slate-400">MOBILE EDITION</p>
+            </div>
+        </div>
+        
+        <div class="flex gap-4">
+            <div class="text-right">
+                <p class="text-[9px] text-slate-400 font-bold">SCORE</p>
+                <p id="score" class="font-orbitron text-lg font-bold text-white tracking-wider">0</p>
+            </div>
+            <div class="text-right border-l border-slate-800 pl-4">
+                <p class="text-[9px] text-slate-400 font-bold">BEST</p>
+                <p id="high-score" class="font-orbitron text-lg font-bold text-amber-400 tracking-wider">0</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 중앙 게임 플레이 공간 -->
+    <div class="relative flex-grow w-full max-w-md flex items-center justify-center my-2">
+        <!-- 메인 게임 보드 캔버스 -->
+        <div class="relative rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl shadow-cyan-500/10 bg-slate-950/90 aspect-[1/2] w-full max-h-[50vh] flex items-center justify-center">
+            <canvas id="tetris-canvas" class="w-full h-full block"></canvas>
+
+            <!-- 게임 오버 / 일시 정지 오버레이 -->
+            <div id="overlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-4 transition-all duration-300">
+                <div class="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center mb-2">
+                    <i id="overlay-icon" class="fa-solid fa-play text-2xl text-amber-400"></i>
+                </div>
+                <h2 id="overlay-title" class="font-orbitron font-black text-2xl tracking-wider text-amber-400">READY TO PLAY?</h2>
+                <p id="overlay-desc" class="text-xs text-slate-400 max-w-xs leading-relaxed">
+                    하단의 화살표 버튼을 터치하거나 가볍게 스와이프하여 게임을 컨트롤하세요.
+                </p>
+                <button id="start-btn" onclick="startGame()" class="bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black px-8 py-3.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all transform hover:scale-105">
+                    게임 시작
+                </button>
+            </div>
+
+            <!-- 미니 다음 블록(Next Piece) 오버레이 정보 (우측 상단 투명 패널) -->
+            <div class="absolute top-3 right-3 bg-slate-900/70 border border-slate-800/80 rounded-xl p-2 flex flex-col items-center shadow-md">
+                <p class="text-[8px] text-slate-400 font-bold mb-1">NEXT</p>
+                <canvas id="next-canvas" width="60" height="60" class="block"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 하단 모바일 컨트롤 패드 및 제어 패널 -->
+    <div class="w-full max-w-md flex flex-col gap-3 bg-slate-900/50 backdrop-blur-xs p-3 rounded-2xl border border-slate-800">
+        
+        <!-- 컨트롤러 상단 서브 액션 버튼 (일시정지, 하드드롭 등) -->
+        <div class="flex justify-between items-center px-1">
+            <div class="flex gap-2">
+                <button onclick="togglePause()" class="w-10 h-10 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/50 flex items-center justify-center text-slate-300 active:scale-95 transition-all">
+                    <i id="pause-btn-icon" class="fa-solid fa-pause"></i>
+                </button>
+                <button onclick="restartGame()" class="w-10 h-10 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/50 flex items-center justify-center text-slate-300 active:scale-95 transition-all">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+            
+            <span class="text-[11px] text-slate-500 flex items-center gap-1">
+                <i class="fa-solid fa-circle-info"></i> 터치 스와이프 조작도 지원합니다
+            </span>
+            
+            <!-- 하드 드롭 버튼 -->
+            <button onclick="triggerHardDrop()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold px-4 h-10 rounded-lg text-xs tracking-wider flex items-center gap-1 shadow-md transition-all">
+                <i class="fa-solid fa-angles-down"></i> HARD DROP
+            </button>
+        </div>
+
+        <!-- 십자 형태 및 회전형 가상 컨트롤 패드 (중요 터치포인트 설계) -->
+        <div class="grid grid-cols-3 gap-2.5 items-center justify-center max-w-[280px] mx-auto w-full">
+            <!-- 1열 빈 공간 -->
+            <div></div>
+            
+            <!-- 위쪽: 블록 회전 -->
+            <button onclick="triggerRotate()" class="touch-btn h-14 bg-slate-800/40 border border-slate-700/30 rounded-2xl flex flex-col items-center justify-center text-slate-200 shadow-md transition-all">
+                <i class="fa-solid fa-rotate text-sm text-amber-400"></i>
+                <span class="text-[9px] font-bold mt-1 text-slate-400">회전</span>
+            </button>
+            
+            <!-- 1열 빈 공간 -->
+            <div></div>
+
+            <!-- 왼쪽: 이동 -->
+            <button onclick="triggerMove(-1)" class="touch-btn h-14 bg-slate-800/40 border border-slate-700/30 rounded-2xl flex flex-col items-center justify-center text-slate-200 shadow-md transition-all">
+                <i class="fa-solid fa-chevron-left text-sm text-amber-400"></i>
+                <span class="text-[9px] font-bold mt-1 text-slate-400">왼쪽</span>
+            </button>
+
+            <!-- 중앙: 소프트 드롭 -->
+            <button onclick="triggerDrop()" class="touch-btn h-14 bg-slate-800/40 border border-slate-700/30 rounded-2xl flex flex-col items-center justify-center text-slate-200 shadow-md transition-all">
+                <i class="fa-solid fa-chevron-down text-sm text-amber-400"></i>
+                <span class="text-[9px] font-bold mt-1 text-slate-400">소프트</span>
+            </button>
+
+            <!-- 오른쪽: 이동 -->
+            <button onclick="triggerMove(1)" class="touch-btn h-14 bg-slate-800/40 border border-slate-700/30 rounded-2xl flex flex-col items-center justify-center text-slate-200 shadow-md transition-all">
+                <i class="fa-solid fa-chevron-right text-sm text-amber-400"></i>
+                <span class="text-[9px] font-bold mt-1 text-slate-400">오른쪽</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 인게임 사운드 효과 및 다이어로그 대체 메시지 창 -->
+    <div id="alert-popup" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 max-w-xs w-full text-center space-y-4">
+            <div id="alert-icon" class="text-3xl text-amber-400">
+                <i class="fa-solid fa-circle-info"></i>
+            </div>
+            <p id="alert-msg" class="text-sm font-semibold text-slate-200 leading-relaxed"></p>
+            <button onclick="closeAlert()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold py-2 px-6 rounded-lg transition-all w-full">닫기</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 글로벌 선언 및 설정 ---
+        const canvas = document.getElementById('tetris-canvas');
+        const ctx = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('next-canvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        // 테트리스 규격
+        const COLS = 10;
+        const ROWS = 20;
+        let blockSize = 0; // 캔버스 리사이즈에 맞춰 동적 조절됨
+
+        // 게임 핵심 상태 변수들
+        let score = 0;
+        let highScore = localStorage.getItem('tetris_high_score') || 0;
+        let board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+        let dropCounter = 0;
+        let dropInterval = 1000; // 난이도 조절용 드롭 기본 인터벌 (ms)
+        let lastTime = 0;
+        let isPaused = false;
+        let isGameOver = true;
+        let gameLoopId = null;
+
+        // 현재 테트로미노 및 다음 테트로미노 정보
+        let currentPiece = null;
+        let nextPiece = null;
+
+        // 테트로미노 블록 컬러 정의 (네온 스타일 광원)
+        const SHAPES_COLOR = {
+            1: { fill: '#ff007f', shadow: 'rgba(255, 0, 127, 0.6)' }, // T 블록 (마젠타)
+            2: { fill: '#00f0ff', shadow: 'rgba(0, 240, 255, 0.6)' }, // I 블록 (시안)
+            3: { fill: '#ffaa00', shadow: 'rgba(255, 170, 0, 0.6)' }, // O 블록 (오렌지)
+            4: { fill: '#ff003c', shadow: 'rgba(255, 0, 60, 0.6)' },  // Z 블록 (네온 레드)
+            5: { fill: '#00ff66', shadow: 'rgba(0, 255, 102, 0.6)' }, // S 블록 (그린)
+            6: { fill: '#003cff', shadow: 'rgba(0, 60, 255, 0.6)' },  // J 블록 (다크 블루)
+            7: { fill: '#ff00f0', shadow: 'rgba(255, 0, 240, 0.6)' }  // L 블록 (바이올렛)
+        };
+
+        // 테트로미노 도형 매트릭스 정의
+        const SHAPES = [
+            [], // 인덱스 제로 패스
+            [[0, 1, 0], [1, 1, 1], [0, 0, 0]], // T
+            [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], // I
+            [[1, 1], [1, 1]], // O
+            [[1, 1, 0], [0, 1, 1], [0, 0, 0]], // Z
+            [[0, 1, 1], [1, 1, 0], [0, 0, 0]], // S
+            [[1, 0, 0], [1, 1, 1], [0, 0, 0]], // J
+            [[0, 0, 1], [1, 1, 1], [0, 0, 0]]  // L
+        ];
+
+        // --- 초기화 및 모바일 리사이즈 대응 ---
+        function initApp() {
+            document.getElementById('high-score').innerText = highScore;
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            initTouchGestures();
+            renderInitialState();
+        }
+
+        // 캔버스 크기를 모바일 뷰포트 영역에 맞춰 물리적 보정
+        function resizeCanvas() {
+            const containerWidth = canvas.parentElement.clientWidth;
+            const containerHeight = canvas.parentElement.clientHeight;
+            
+            // 비율 고정 (1:2 비율 계산)
+            let width = containerWidth;
+            let height = width * 2;
+
+            if (height > containerHeight) {
+                height = containerHeight;
+                width = height / 2;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            blockSize = width / COLS;
+            
+            draw();
+        }
+
+        // --- 테트리스 로직 구현 ---
+
+        class Piece {
+            constructor(shapeIndex) {
+                this.shapeIndex = shapeIndex;
+                this.matrix = SHAPES[shapeIndex].map(row => row.map(val => val ? shapeIndex : 0));
+                this.x = Math.floor((COLS - this.matrix[0].length) / 2);
+                this.y = 0;
+            }
+
+            // 시계 방향 행렬 회전
+            rotate() {
+                const n = this.matrix.length;
+                const rotated = Array.from({ length: n }, () => Array(n).fill(0));
+                for (let r = 0; r < n; r++) {
+                    for (let c = 0; c < n; c++) {
+                        rotated[c][n - 1 - r] = this.matrix[r][c];
+                    }
+                }
+                
+                // 회전 시 충돌 체크 및 벽타기(Wall Kick) 처리
+                const prevX = this.x;
+                const prevMatrix = this.matrix;
+                this.matrix = rotated;
+
+                let offset = 1;
+                while (checkCollision(this)) {
+                    this.x += offset;
+                    offset = -(offset + (offset > 0 ? 1 : -1));
+                    if (Math.abs(offset) > this.matrix[0].length) {
+                        this.x = prevX;
+                        this.matrix = prevMatrix;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 랜덤 블록 반환
+        function generateRandomPiece() {
+            const randomIndex = Math.floor(Math.random() * 7) + 1;
+            return new Piece(randomIndex);
+        }
+
+        // 충돌 체크
+        function checkCollision(piece) {
+            for (let r = 0; r < piece.matrix.length; r++) {
+                for (let c = 0; c < piece.matrix[r].length; c++) {
+                    if (piece.matrix[r][c] !== 0) {
+                        const boardX = piece.x + c;
+                        const boardY = piece.y + r;
+
+                        if (boardX < 0 || boardX >= COLS || boardY >= ROWS) {
+                            return true;
+                        }
+                        if (boardY >= 0 && board[boardY][boardX] !== 0) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 블록을 보드에 굳히기
+        function lockPiece(piece) {
+            for (let r = 0; r < piece.matrix.length; r++) {
+                for (let c = 0; c < piece.matrix[r].length; c++) {
+                    if (piece.matrix[r][c] !== 0) {
+                        const boardY = piece.y + r;
+                        const boardX = piece.x + c;
+                        if (boardY >= 0) {
+                            board[boardY][boardX] = piece.matrix[r][c];
+                        }
+                    }
+                }
+            }
+        }
+
+        // 라인 제거 확인 및 스코어 갱신
+        function checkLines() {
+            let linesCleared = 0;
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (board[r].every(cell => cell !== 0)) {
+                    board.splice(r, 1);
+                    board.unshift(Array(COLS).fill(0));
+                    linesCleared++;
+                    r++; // 내려온 윗 라인을 다시 스캔하기 위함
+                }
+            }
+
+            if (linesCleared > 0) {
+                // 점수 가중치 (싱글 100, 더블 300, 트리플 500, 테트리스 800)
+                const scoreTable = [0, 100, 300, 500, 800];
+                score += scoreTable[linesCleared] || 1000;
+                document.getElementById('score').innerText = score;
+                
+                // 최고 점수 갱신
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('tetris_high_score', highScore);
+                    document.getElementById('high-score').innerText = highScore;
+                }
+
+                // 속도 점진적 증가 (난이도 자동 상향)
+                dropInterval = Math.max(150, 1000 - Math.floor(score / 500) * 80);
+            }
+        }
+
+        // --- 인게임 렌더링 시스템 ---
+
+        function drawBlock(context, x, y, shapeIndex, size, isNext = false) {
+            const color = SHAPES_COLOR[shapeIndex];
+            if (!color) return;
+
+            context.save();
+            context.fillStyle = color.fill;
+            
+            // 모바일 하드웨어 가속을 돕기 위한 섀도우 연출
+            context.shadowColor = color.shadow;
+            context.shadowBlur = isNext ? 4 : 8;
+
+            // 라운드 코너 네온 박스 렌더링
+            const gap = 1.5;
+            const rx = x * size + gap;
+            const ry = y * size + gap;
+            const rsize = size - (gap * 2);
+            const radius = Math.max(2, size * 0.15);
+
+            context.beginPath();
+            context.moveTo(rx + radius, ry);
+            context.arcTo(rx + rsize, ry, rx + rsize, ry + rsize, radius);
+            context.arcTo(rx + rsize, ry + rsize, rx, ry + rsize, radius);
+            context.arcTo(rx, ry + rsize, rx, ry, radius);
+            context.arcTo(rx, ry, rx + rsize, ry, radius);
+            context.closePath();
+            context.fill();
+
+            // 입체감 표현용 하이라이트 이너 라인
+            context.shadowColor = 'transparent';
+            context.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            context.lineWidth = 1;
+            context.stroke();
+
+            context.restore();
+        }
+
+        // 보드 전면 클리어 및 프레임 그리기
+        function draw() {
+            // 보드 전체 지우기 (투명도 잔상 보존하지 않고 선명하게 밀기)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 보드 격자 격자망선 배경 렌더링
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 0.5;
+            for (let r = 0; r <= ROWS; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, r * blockSize);
+                ctx.lineTo(canvas.width, r * blockSize);
+                ctx.stroke();
+            }
+            for (let c = 0; c <= COLS; c++) {
+                ctx.beginPath();
+                ctx.moveTo(c * blockSize, 0);
+                ctx.lineTo(c * blockSize, canvas.height);
+                ctx.stroke();
+            }
+
+            // 쌓인 블록 그리기
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c] !== 0) {
+                        drawBlock(ctx, c, r, board[r][c], blockSize);
+                    }
+                }
+            }
+
+            // 조작중인 활성 블록 그리기
+            if (currentPiece) {
+                for (let r = 0; r < currentPiece.matrix.length; r++) {
+                    for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+                        if (currentPiece.matrix[r][c] !== 0) {
+                            drawBlock(ctx, currentPiece.x + c, currentPiece.y + r, currentPiece.shapeIndex, blockSize);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 다음 대기 블록(Next UI) 그리기
+        function drawNext() {
+            nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+            if (!nextPiece) return;
+
+            const nMatrix = nextPiece.matrix;
+            const size = nextCanvas.width / 4;
+            const offsetX = (4 - nMatrix[0].length) / 2;
+            const offsetY = (4 - nMatrix.length) / 2;
+
+            for (let r = 0; r < nMatrix.length; r++) {
+                for (let c = 0; c < nMatrix[r].length; c++) {
+                    if (nMatrix[r][c] !== 0) {
+                        drawBlock(nextCtx, c + offsetX, r + offsetY, nextPiece.shapeIndex, size, true);
+                    }
+                }
+            }
+        }
+
+        // 초기 시작 전 화면 렌더링
+        function renderInitialState() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#1e293b";
+            ctx.textAlign = "center";
+            ctx.font = "14px 'Orbitron', sans-serif";
+            ctx.fillText("READY FOR ACTION", canvas.width / 2, canvas.height / 2);
+        }
+
+        // --- 게임 흐름 제어 시스템 ---
+
+        // 게임 메인 루프
+        function update(time = 0) {
+            if (isPaused || isGameOver) return;
+
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                triggerDrop();
+            }
+
+            draw();
+            gameLoopId = requestAnimationFrame(update);
+        }
+
+        // 게임 오버 처리
+        function gameOver() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopId);
+            
+            document.getElementById('overlay-title').innerText = "GAME OVER";
+            document.getElementById('overlay-desc').innerHTML = `최종 점수: <span class="text-amber-400 font-bold">${score}</span>점<br>기록 갱신에 다시 도전해 보세요.`;
+            document.getElementById('overlay-icon').className = "fa-solid fa-rotate-right text-2xl text-amber-400";
+            document.getElementById('start-btn').innerText = "다시 시작";
+            document.getElementById('overlay').classList.remove('hidden');
+        }
+
+        // 새 게임 초기화 및 시작
+        function startGame() {
+            // 오버레이 제거
+            document.getElementById('overlay').classList.add('hidden');
+            
+            // 데이터 완전 리셋
+            board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+            score = 0;
+            dropInterval = 1000;
+            document.getElementById('score').innerText = score;
+            
+            isGameOver = false;
+            isPaused = false;
+            document.getElementById('pause-btn-icon').className = "fa-solid fa-pause";
+
+            currentPiece = generateRandomPiece();
+            nextPiece = generateRandomPiece();
+
+            drawNext();
+            lastTime = performance.now();
+            dropCounter = 0;
+
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
+            update();
+        }
+
+        // 일시정지
+        function togglePause() {
+            if (isGameOver) return;
+
+            isPaused = !isPaused;
+            const pauseIcon = document.getElementById('pause-btn-icon');
+            
+            if (isPaused) {
+                pauseIcon.className = "fa-solid fa-play";
+                document.getElementById('overlay-title').innerText = "PAUSED";
+                document.getElementById('overlay-desc').innerText = "게임이 일시 정지되었습니다. 하단 재생 버튼이나 다시 시작을 누르세요.";
+                document.getElementById('overlay-icon').className = "fa-solid fa-pause text-2xl text-amber-400";
+                document.getElementById('start-btn').innerText = "계속하기";
+                document.getElementById('overlay').classList.remove('hidden');
+                cancelAnimationFrame(gameLoopId);
+            } else {
+                pauseIcon.className = "fa-solid fa-pause";
+                document.getElementById('overlay').classList.add('hidden');
+                lastTime = performance.now();
+                update();
+            }
+        }
+
+        // 재시작
+        function restartGame() {
+            if (confirm("게임을 처음부터 다시 시작할까요?")) {
+                startGame();
+            }
+        }
+
+        // --- 터치 / 가상 컨트롤러 매핑 시스템 ---
+
+        function triggerMove(dir) {
+            if (isPaused || isGameOver || !currentPiece) return;
+            currentPiece.x += dir;
+            if (checkCollision(currentPiece)) {
+                currentPiece.x -= dir; // 롤백
+            } else {
+                draw();
+            }
+        }
+
+        function triggerRotate() {
+            if (isPaused || isGameOver || !currentPiece) return;
+            currentPiece.rotate();
+            draw();
+        }
+
+        function triggerDrop() {
+            if (isPaused || isGameOver || !currentPiece) return;
+            currentPiece.y++;
+            if (checkCollision(currentPiece)) {
+                currentPiece.y--; // 롤백
+                lockPiece(currentPiece);
+                checkLines();
+
+                // 차기 대기 블록 소환 및 유실 처리
+                currentPiece = nextPiece;
+                nextPiece = generateRandomPiece();
+                drawNext();
+
+                // 시작점에서 바로 충돌 시 게임오버
+                if (checkCollision(currentPiece)) {
+                    gameOver();
+                    return;
+                }
+            }
+            dropCounter = 0;
+            draw();
+        }
+
+        function triggerHardDrop() {
+            if (isPaused || isGameOver || !currentPiece) return;
+            while (!checkCollision(currentPiece)) {
+                currentPiece.y++;
+            }
+            currentPiece.y--;
+            lockPiece(currentPiece);
+            checkLines();
+
+            currentPiece = nextPiece;
+            nextPiece = generateRandomPiece();
+            drawNext();
+
+            if (checkCollision(currentPiece)) {
+                gameOver();
+                return;
+            }
+            dropCounter = 0;
+            draw();
+        }
+
+        // --- 키보드 백업 매핑 (데스크탑 대비) ---
+        document.addEventListener('keydown', event => {
+            if (isGameOver) return;
+            switch(event.key) {
+                case 'ArrowLeft':
+                    triggerMove(-1);
+                    break;
+                case 'ArrowRight':
+                    triggerMove(1);
+                    break;
+                case 'ArrowDown':
+                    triggerDrop();
+                    break;
+                case 'ArrowUp':
+                    triggerRotate();
+                    break;
+                case ' ': // 스페이스 바 하드 드롭
+                    triggerHardDrop();
+                    break;
+                case 'p':
+                case 'P':
+                    togglePause();
+                    break;
+            }
+        });
+
+        // --- 모바일 전용 물리 스와이프 제어 센서 ---
+        function initTouchGestures() {
+            const touchZone = canvas;
+            let startX = 0;
+            let startY = 0;
+            let isMoving = false;
+
+            // 터치 시작 기준점 잡기
+            touchZone.addEventListener('touchstart', (e) => {
+                if (isGameOver || isPaused) return;
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                isMoving = true;
+            }, { passive: true });
+
+            // 드래그 방향에 맞춰 다이내믹 이벤트 처리
+            touchZone.addEventListener('touchmove', (e) => {
+                if (!isMoving || isGameOver || isPaused) return;
+                const touch = e.touches[0];
+                const diffX = touch.clientX - startX;
+                const diffY = touch.clientY - startY;
+
+                // 세로/가로 감도 임계치 설정
+                const threshold = 35; 
+
+                // 좌우 스와이프 감지
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    if (Math.abs(diffX) > threshold) {
+                        if (diffX > 0) {
+                            triggerMove(1); // 오른쪽 이동
+                        } else {
+                            triggerMove(-1); // 왼쪽 이동
+                        }
+                        startX = touch.clientX; // 기준점 최신화
+                        startY = touch.clientY;
+                    }
+                } else {
+                    // 상하 드래그 감지
+                    if (diffY > threshold + 15) {
+                        triggerDrop(); // 아래로 빠른 스와이프 시 소프트 드롭 가속화
+                        startX = touch.clientX;
+                        startY = touch.clientY;
+                    }
+                }
+            }, { passive: true });
+
+            // 터치 탈출
+            touchZone.addEventListener('touchend', (e) => {
+                isMoving = false;
+            });
+
+            // 화면을 짧게 탭할 시 회전
+            touchZone.addEventListener('click', (e) => {
+                if (isGameOver || isPaused) return;
+                triggerRotate();
+            });
+        }
+
+        // --- 커스텀 공용 팝업 조작 ---
+        function showAlert(msg) {
+            document.getElementById('alert-msg').innerText = msg;
+            document.getElementById('alert-popup').classList.remove('hidden');
+        }
+
+        function closeAlert() {
+            document.getElementById('alert-popup').classList.add('hidden');
+        }
+
+        // 앱 구동 시작
+        initApp();
+    </script>
+</body>
+</html>
+
+```
 
